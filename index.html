@@ -263,10 +263,8 @@
   const BACKEND_URL = isLocal
     ? "http://127.0.0.1:5000/chat"
     : `${RENDER_BASE}/chat`;
-  const BROWSE_URL = isLocal
-    ? "http://127.0.0.1:5000/browse"
-    : `${RENDER_BASE}/browse`;
-console.log("🌐 Usando backend:", BACKEND_URL);
+
+  console.log("🌐 Usando backend:", BACKEND_URL);
   const STORAGE_KEY = "agi-chat-history";
 
   // ===== MEMORIA =====
