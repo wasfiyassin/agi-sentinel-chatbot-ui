@@ -251,198 +251,245 @@
         <button id="sendBtn">➤</button>
       </footer>
     </div>
+<script>
+  // 1) detectar si estamos en local o en la web
+  const isLocal =
+    location.hostname === "localhost" || location.hostname === "127.0.0.1";
 
-    <script>
-      const BACKEND_URL = "https://agi-sentinel-bot.onrender.com/chat";
-      const STORAGE_KEY = "agi-chat-history";
+  // 2) URL del backend
+  //    👉 en local llama a tu Flask
+  //    👉 en la web llama al Render
+  const BACKEND_URL = isLocal
+    ? "http://127.0.0.1:5000/chat"
+    : "https://agi-sentinel-bot.onrender.com/chat";
 
-      let chatHistory = [
+  const BROWSE_URL = isLocal
+    ? "http://127.0.0.1:5000/browse"
+    : "https://agi-sentinel-bot.onrender.com/browse";
+
+  // 3) memoria en navegador
+  const STORAGE_KEY = "agi-chat-history";
+
+  let chatHistory = [
+    {
+      role: "system",
+      content:
+        "Eres un asistente de AGi Sentinel. Respondes en español y ayudas con diseño de UI, n8n, Supabase y automatización.",
+    },
+  ];
+
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length) chatHistory = parsed;
+    } catch (_) {}
+  }
+
+  // 4) selectores
+  const chatBody = document.getElementById("chatBody");
+  const userInput = document.getElementById("userInput");
+  const sendBtn = document.getElementById("sendBtn");
+  const loadingBar = document.getElementById("loadingBar");
+  const toggleAI = document.getElementById("toggleAI");
+  const statusDot = document.getElementById("statusDot");
+  const modelStatus = document.getElementById("modelStatus");
+  const quickActions = document.querySelector(".quick-actions");
+  const clearMemoryBtn = document.getElementById("clearMemoryBtn");
+
+  function saveHistory() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(chatHistory));
+  }
+
+  function appendUserMessage(text) {
+    const msg = document.createElement("div");
+    msg.className = "msg msg-user";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = text;
+    msg.appendChild(bubble);
+    chatBody.appendChild(msg);
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  function appendAITyping() {
+    const wrap = document.createElement("div");
+    wrap.className = "msg msg-ai";
+    wrap.id = "typingMsg";
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = "IA";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.innerHTML =
+      '<div class="typing"><span></span><span></span><span></span></div>';
+
+    wrap.appendChild(avatar);
+    wrap.appendChild(bubble);
+    chatBody.appendChild(wrap);
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  function replaceTypingWithAI(text, metaText = "") {
+    const typingMsg = document.getElementById("typingMsg");
+    if (!typingMsg) return;
+    const bubble = typingMsg.querySelector(".bubble");
+    bubble.innerHTML =
+      `<p>${text}</p>` + (metaText ? `<span class="meta">${metaText}</span>` : "");
+    typingMsg.id = "";
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  function setLoading(state) {
+    if (state) {
+      loadingBar.classList.add("active");
+      userInput.disabled = true;
+      sendBtn.disabled = true;
+    } else {
+      loadingBar.classList.remove("active");
+      userInput.disabled = false;
+      sendBtn.disabled = false;
+      userInput.focus();
+    }
+  }
+
+  // ====== llamadas al backend ======
+  async function callOpenAI(userMessage) {
+    try {
+      // añadimos el mensaje del usuario a la memoria
+      chatHistory.push({ role: "user", content: userMessage });
+
+      // mandamos solo los últimos 10
+      const lastMessages = chatHistory.slice(-10);
+
+      const res = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: lastMessages }),
+      });
+
+      if (!res.ok) {
+        return {
+          error: true,
+          text: "Error en el backend. Revisa Render.",
+        };
+      }
+
+      const data = await res.json();
+      const aiText =
+        data.choices?.[0]?.message?.content?.trim() ||
+        "No recibí respuesta de la IA.";
+
+      // guardamos en memoria
+      chatHistory.push({ role: "assistant", content: aiText });
+      saveHistory();
+
+      return { error: false, text: aiText, model: data.model || "OpenAI" };
+    } catch (err) {
+      console.error("❌ No se pudo conectar al backend:", err);
+      return {
+        error: true,
+        text: "No se pudo conectar al backend.",
+      };
+    }
+  }
+
+  // ====== enviar ======
+  async function handleSend(customText) {
+    const text = customText ?? userInput.value.trim();
+    if (!text) return;
+
+    appendUserMessage(text);
+    if (!customText) userInput.value = "";
+
+    // si la IA está apagada
+    if (toggleAI && !toggleAI.checked) {
+      appendAITyping();
+      setTimeout(() => {
+        replaceTypingWithAI(
+          "La IA está en modo apagado. Actívala arriba para conectar con OpenAI.",
+          "IA local"
+        );
+      }, 400);
+      return;
+    }
+
+    appendAITyping();
+    setLoading(true);
+    modelStatus.textContent = "Consultando OpenAI...";
+    statusDot.classList.remove("offline");
+    statusDot.classList.add("online");
+
+    const { error, text: aiText, model } = await callOpenAI(text);
+
+    if (error) {
+      replaceTypingWithAI(aiText, "Error");
+      modelStatus.textContent = "Error con OpenAI";
+      statusDot.classList.remove("online");
+      statusDot.classList.add("offline");
+    } else {
+      replaceTypingWithAI(aiText, `Modelo: ${model || "OpenAI"}`);
+      modelStatus.textContent = "IA conectada a OpenAI";
+      statusDot.classList.remove("offline");
+      statusDot.classList.add("online");
+    }
+
+    setLoading(false);
+  }
+
+  // ====== eventos ======
+  sendBtn.addEventListener("click", () => handleSend());
+  userInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") handleSend();
+  });
+
+  if (quickActions) {
+    quickActions.addEventListener("click", (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      const prompt = btn.getAttribute("data-prompt");
+      if (prompt) handleSend(prompt);
+    });
+  }
+
+  if (toggleAI) {
+    toggleAI.addEventListener("change", () => {
+      if (toggleAI.checked) {
+        modelStatus.textContent = "IA conectada a OpenAI";
+        statusDot.classList.remove("offline");
+        statusDot.classList.add("online");
+      } else {
+        modelStatus.textContent = "IA en pausa";
+        statusDot.classList.remove("online");
+        statusDot.classList.add("offline");
+      }
+    });
+  }
+
+  // botón limpiar memoria
+  if (clearMemoryBtn) {
+    clearMemoryBtn.addEventListener("click", () => {
+      chatHistory = [
         {
           role: "system",
           content:
             "Eres un asistente de AGi Sentinel. Respondes en español y ayudas con diseño de UI, n8n, Supabase y automatización.",
         },
       ];
-
-      const chatBody = document.getElementById("chatBody");
-      const userInput = document.getElementById("userInput");
-      const sendBtn = document.getElementById("sendBtn");
-      const loadingBar = document.getElementById("loadingBar");
-      const toggleAI = document.getElementById("toggleAI");
-      const statusDot = document.getElementById("statusDot");
-      const modelStatus = document.getElementById("modelStatus");
-      const quickActions = document.querySelector(".quick-actions");
-      const clearMemoryBtn = document.getElementById("clearMemoryBtn");
-
-      function saveHistory() {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(chatHistory));
-      }
-
-      function appendUserMessage(text) {
-        const msg = document.createElement("div");
-        msg.className = "msg msg-user";
-        const bubble = document.createElement("div");
-        bubble.className = "bubble";
-        bubble.textContent = text;
-        msg.appendChild(bubble);
-        chatBody.appendChild(msg);
-        chatBody.scrollTop = chatBody.scrollHeight;
-      }
-
-      function appendAITyping() {
-        const wrap = document.createElement("div");
-        wrap.className = "msg msg-ai";
-        wrap.id = "typingMsg";
-
-        const avatar = document.createElement("div");
-        avatar.className = "avatar";
-        avatar.textContent = "IA";
-
-        const bubble = document.createElement("div");
-        bubble.className = "bubble";
-        bubble.innerHTML =
-          '<div class="typing"><span></span><span></span><span></span></div>';
-
-        wrap.appendChild(avatar);
-        wrap.appendChild(bubble);
-        chatBody.appendChild(wrap);
-        chatBody.scrollTop = chatBody.scrollHeight;
-      }
-
-      function replaceTypingWithAI(text, metaText = "") {
-        const typingMsg = document.getElementById("typingMsg");
-        if (!typingMsg) return;
-        const bubble = typingMsg.querySelector(".bubble");
-        bubble.innerHTML =
-          `<p>${text}</p>` +
-          (metaText ? `<span class="meta">${metaText}</span>` : "");
-        typingMsg.id = "";
-        chatBody.scrollTop = chatBody.scrollHeight;
-      }
-
-      function setLoading(state) {
-        if (state) {
-          loadingBar.classList.add("active");
-          userInput.disabled = true;
-          sendBtn.disabled = true;
-        } else {
-          loadingBar.classList.remove("active");
-          userInput.disabled = false;
-          sendBtn.disabled = false;
-          userInput.focus();
-        }
-      }
-
-      async function callOpenAI(userMessage) {
-        try {
-          chatHistory.push({ role: "user", content: userMessage });
-          const lastMessages = chatHistory.slice(-10);
-
-          const res = await fetch(BACKEND_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ messages: lastMessages }),
-          });
-
-          if (!res.ok) {
-            return { error: true, text: "Error en el backend. Revisa Render." };
-          }
-
-          const data = await res.json();
-          const aiText =
-            data.choices?.[0]?.message?.content?.trim() ||
-            "No recibí respuesta de la IA.";
-          chatHistory.push({ role: "assistant", content: aiText });
-          saveHistory();
-          return { error: false, text: aiText, model: data.model || "OpenAI" };
-        } catch (err) {
-          console.error(err);
-          return { error: true, text: "No se pudo conectar al backend." };
-        }
-      }
-
-      async function handleSend(customText) {
-        const text = customText ?? userInput.value.trim();
-        if (!text) return;
-
-        appendUserMessage(text);
-        if (!customText) userInput.value = "";
-
-        if (!toggleAI.checked) {
-          appendAITyping();
-          setTimeout(() => {
-            replaceTypingWithAI(
-              "La IA está en modo apagado. Actívala arriba.",
-              "IA local"
-            );
-          }, 400);
-          return;
-        }
-
-        appendAITyping();
-        setLoading(true);
-        modelStatus.textContent = "Consultando OpenAI...";
-        statusDot.classList.remove("offline");
-        statusDot.classList.add("online");
-
-        const { error, text: aiText, model } = await callOpenAI(text);
-
-        if (error) {
-          replaceTypingWithAI(aiText, "Error");
-          modelStatus.textContent = "Error con OpenAI";
-          statusDot.classList.remove("online");
-          statusDot.classList.add("offline");
-        } else {
-          replaceTypingWithAI(aiText, `Modelo: ${model || "OpenAI"}`);
-          modelStatus.textContent = "IA conectada a OpenAI";
-        }
-
-        setLoading(false);
-      }
-
-      sendBtn.addEventListener("click", () => handleSend());
-      userInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") handleSend();
-      });
-
-      quickActions.addEventListener("click", (e) => {
-        const btn = e.target.closest("button");
-        if (!btn) return;
-        const prompt = btn.getAttribute("data-prompt");
-        if (prompt) handleSend(prompt);
-      });
-
-      toggleAI.addEventListener("change", () => {
-        if (toggleAI.checked) {
-          modelStatus.textContent = "IA conectada a OpenAI";
-          statusDot.classList.remove("offline");
-          statusDot.classList.add("online");
-        } else {
-          modelStatus.textContent = "IA en pausa";
-          statusDot.classList.remove("online");
-          statusDot.classList.add("offline");
-        }
-      });
-
-      clearMemoryBtn.addEventListener("click", () => {
-        chatHistory = [
-          {
-            role: "system",
-            content:
-              "Eres un asistente de AGi Sentinel. Respondes en español y ayudas con diseño de UI, n8n, Supabase y automatización.",
-          },
-        ];
-        saveHistory();
-        chatBody.innerHTML = `
-          <div class="msg msg-ai">
-            <div class="avatar">IA</div>
-            <div class="bubble">
-              <p>Memoria borrada 🧹. Podemos empezar de nuevo.</p>
-              <span class="meta">Sistema</span>
-            </div>
+      saveHistory();
+      chatBody.innerHTML = `
+        <div class="msg msg-ai">
+          <div class="avatar">IA</div>
+          <div class="bubble">
+            <p>Memoria borrada 🧹. Podemos empezar de nuevo.</p>
+            <span class="meta">Sistema</span>
           </div>
-        `;
-      });
-    </script>
+        </div>
+      `;
+    });
+  }
+</script>
   </body>
 </html>
