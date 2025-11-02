@@ -251,23 +251,25 @@
         <button id="sendBtn">➤</button>
       </footer>
     </div>
+    
 <script>
-  // 1) detectar si estamos en local o en la web
+  // 🟦 1. detectar si estamos en local o en la web
   const isLocal =
     location.hostname === "localhost" || location.hostname === "127.0.0.1";
 
-  // 2) URL del backend
-  //    👉 en local llama a tu Flask
-  //    👉 en la web llama al Render
+  // 🟦 2. URLs del backend
+  // 👇 CAMBIA SOLO ESTA si tu render tiene otro nombre
+  const RENDER_BASE = "https://agi-sentinel-bot.onrender.com";
+
   const BACKEND_URL = isLocal
     ? "http://127.0.0.1:5000/chat"
-    : "https://agi-sentinel-bot.onrender.com/chat";
+    : `${RENDER_BASE}/chat`;
 
   const BROWSE_URL = isLocal
     ? "http://127.0.0.1:5000/browse"
-    : "https://agi-sentinel-bot.onrender.com/browse";
+    : `${RENDER_BASE}/browse`;
 
-  // 3) memoria en navegador
+  // 🟦 3. memoria
   const STORAGE_KEY = "agi-chat-history";
 
   let chatHistory = [
@@ -286,7 +288,7 @@
     } catch (_) {}
   }
 
-  // 4) selectores
+  // 🟦 4. selectores
   const chatBody = document.getElementById("chatBody");
   const userInput = document.getElementById("userInput");
   const sendBtn = document.getElementById("sendBtn");
@@ -355,13 +357,11 @@
     }
   }
 
-  // ====== llamadas al backend ======
+  // 🟦 5. llamada al backend
   async function callOpenAI(userMessage) {
     try {
-      // añadimos el mensaje del usuario a la memoria
+      // metemos el user en memoria
       chatHistory.push({ role: "user", content: userMessage });
-
-      // mandamos solo los últimos 10
       const lastMessages = chatHistory.slice(-10);
 
       const res = await fetch(BACKEND_URL, {
@@ -370,7 +370,9 @@
         body: JSON.stringify({ messages: lastMessages }),
       });
 
+      // si Render responde 404/500/CORS ➜ entramos aquí
       if (!res.ok) {
+        console.error("Backend devolvió error", res.status);
         return {
           error: true,
           text: "Error en el backend. Revisa Render.",
@@ -381,8 +383,6 @@
       const aiText =
         data.choices?.[0]?.message?.content?.trim() ||
         "No recibí respuesta de la IA.";
-
-      // guardamos en memoria
       chatHistory.push({ role: "assistant", content: aiText });
       saveHistory();
 
@@ -396,7 +396,7 @@
     }
   }
 
-  // ====== enviar ======
+  // 🟦 6. enviar
   async function handleSend(customText) {
     const text = customText ?? userInput.value.trim();
     if (!text) return;
@@ -404,15 +404,14 @@
     appendUserMessage(text);
     if (!customText) userInput.value = "";
 
-    // si la IA está apagada
-    if (toggleAI && !toggleAI.checked) {
+    if (!toggleAI.checked) {
       appendAITyping();
       setTimeout(() => {
         replaceTypingWithAI(
           "La IA está en modo apagado. Actívala arriba para conectar con OpenAI.",
           "IA local"
         );
-      }, 400);
+      }, 350);
       return;
     }
 
@@ -439,7 +438,7 @@
     setLoading(false);
   }
 
-  // ====== eventos ======
+  // 🟦 7. eventos
   sendBtn.addEventListener("click", () => handleSend());
   userInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleSend();
@@ -468,7 +467,6 @@
     });
   }
 
-  // botón limpiar memoria
   if (clearMemoryBtn) {
     clearMemoryBtn.addEventListener("click", () => {
       chatHistory = [
@@ -491,5 +489,6 @@
     });
   }
 </script>
+
   </body>
 </html>
