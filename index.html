@@ -2,13 +2,497 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <title>AGi Sentinel · Chatbot</title>
+    <title>Chatbot AGi Sentinel</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="style.css" />
+    <style>
+      :root {
+        --bg: radial-gradient(circle at top, #06131a 0%, #020617 65%, #020617 100%);
+        --panel: rgba(2, 6, 23, 0.85);
+        --line: rgba(35, 224, 255, 0.18);
+        --accent: #2af0ff;
+        --accent-soft: rgba(42, 240, 255, 0.15);
+        --text: #e2e8f0;
+        --muted: #7e8ea3;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #020617;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .chatbot {
+        width: min(410px, 100vw);
+        background: #020617;
+        border: 1px solid rgba(42, 240, 255, 0.35);
+        border-radius: 22px;
+        box-shadow: 0 0 35px rgba(42, 240, 255, 0.22);
+        overflow: hidden;
+        position: relative;
+      }
+      .loading-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 3px;
+        width: 0;
+        background: linear-gradient(90deg, #2af0ff, #38bdf8);
+        transition: width 0.2s ease;
+        z-index: 15;
+      }
+      .loading-bar.active {
+        width: 100%;
+        animation: loading 1s infinite;
+      }
+      @keyframes loading {
+        0% {
+          width: 0%;
+        }
+        50% {
+          width: 40%;
+        }
+        100% {
+          width: 100%;
+        }
+      }
+      .chatbot-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(2, 6, 23, 0.7);
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid rgba(42, 240, 255, 0.15);
+      }
+      .header-left .title {
+        font-weight: 700;
+        color: #fff;
+      }
+      .header-left .subtitle {
+        font-size: 0.7rem;
+        color: var(--muted);
+      }
+      .header-right {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #22c55e;
+        box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
+      }
+      .status-dot.offline {
+        background: #ef4444;
+        box-shadow: none;
+      }
+      .toggle {
+        position: relative;
+        display: inline-block;
+        width: 46px;
+        height: 25px;
+      }
+      .toggle input {
+        display: none;
+      }
+      .slider {
+        position: absolute;
+        inset: 0;
+        background: #0f172a;
+        border: 1px solid rgba(42, 240, 255, 0.25);
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      .slider::before {
+        content: "";
+        position: absolute;
+        height: 17px;
+        width: 17px;
+        left: 4px;
+        top: 3.3px;
+        background: #fff;
+        border-radius: 50%;
+        transition: 0.2s;
+      }
+      .toggle input:checked + .slider {
+        background: rgba(42, 240, 255, 0.3);
+      }
+      .toggle input:checked + .slider::before {
+        transform: translateX(19px);
+      }
+      .chat-body {
+        max-height: 420px;
+        overflow-y: auto;
+        padding: 1rem 1rem 0.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.7rem;
+      }
+      .msg {
+        display: flex;
+        gap: 0.7rem;
+      }
+      .msg-user {
+        justify-content: flex-end;
+      }
+      .msg-user .bubble {
+        background: rgba(42, 240, 255, 0.15);
+        border: 1px solid rgba(42, 240, 255, 0.4);
+        color: #fff;
+        border-bottom-right-radius: 4px;
+      }
+      .msg-ai .avatar {
+        width: 34px;
+        height: 34px;
+        background: radial-gradient(circle, rgba(42, 240, 255, 0.5), rgba(2, 6, 23, 0.7));
+        border: 1px solid rgba(42, 240, 255, 0.4);
+        border-radius: 999px;
+        font-size: 0.75rem;
+        display: grid;
+        place-items: center;
+        color: #fff;
+      }
+      .bubble {
+        background: rgba(15, 23, 42, 0.45);
+        padding: 0.75rem 0.9rem 0.6rem;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.08);
+        max-width: 78%;
+      }
+      .bubble p {
+        margin: 0;
+        font-size: 0.83rem;
+        color: #e2e8f0;
+      }
+      .bubble .meta {
+        display: block;
+        margin-top: 0.35rem;
+        font-size: 0.65rem;
+        color: rgba(148, 163, 184, 0.6);
+      }
+      .typing {
+        display: flex;
+        gap: 3px;
+      }
+      .typing span {
+        width: 6px;
+        height: 6px;
+        background: #e2e8f0;
+        border-radius: 999px;
+        animation: bounce 1.1s infinite;
+      }
+      .typing span:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      .typing span:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+      @keyframes bounce {
+        0%,
+        100% {
+          opacity: 0.25;
+          transform: translateY(0);
+        }
+        50% {
+          opacity: 1;
+          transform: translateY(-3px);
+        }
+      }
+      .quick-actions {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0.6rem 0.9rem 0.6rem;
+        background: rgba(2, 6, 23, 0.35);
+      }
+      .quick-actions button {
+        flex: 1;
+        background: rgba(15, 23, 42, 0.35);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        color: #e2e8f0;
+        font-size: 0.7rem;
+        border-radius: 999px;
+        padding: 0.45rem 0.3rem;
+        cursor: pointer;
+      }
+      .quick-actions button:hover {
+        background: rgba(42, 240, 255, 0.15);
+      }
+      .clear-btn {
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.35);
+      }
+      .clear-btn:hover {
+        background: rgba(239, 68, 68, 0.35);
+      }
+      .chat-input {
+        display: flex;
+        gap: 0.4rem;
+        padding: 0.7rem 0.9rem 0.85rem;
+        background: rgba(2, 6, 23, 0.6);
+      }
+      .chat-input input {
+        flex: 1;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        padding: 0.55rem 0.7rem;
+        color: #e2e8f0;
+        outline: none;
+      }
+      .chat-input button {
+        width: 40px;
+        height: 40px;
+        border-radius: 999px;
+        border: none;
+        background: radial-gradient(circle, rgba(42, 240, 255, 0.9), rgba(2, 6, 23, 0.5));
+        color: #020617;
+        font-weight: 700;
+        cursor: pointer;
+      }
+    </style>
   </head>
   <body>
-    <!-- tu div .chatbot aquí -->
-    <div id="app"></div>
-    <script src="script.js"></script>
+    <div class="chatbot" id="chatbot">
+      <div class="loading-bar" id="loadingBar"></div>
+
+      <header class="chatbot-header">
+        <div class="header-left">
+          <div class="title">AGi Sentinel</div>
+          <div class="subtitle" id="modelStatus">IA conectada a OpenAI</div>
+        </div>
+        <div class="header-right">
+          <span class="status-dot online" id="statusDot"></span>
+          <label class="toggle">
+            <input type="checkbox" id="toggleAI" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </header>
+
+      <main class="chat-body" id="chatBody">
+        <div class="msg msg-ai">
+          <div class="avatar">IA</div>
+          <div class="bubble">
+            <p>Hola 👋 Soy tu asistente. Escríbeme algo.</p>
+            <span class="meta">Modelo: gpt-4o-mini · contexto activo</span>
+          </div>
+        </div>
+      </main>
+
+      <div class="quick-actions">
+        <button data-prompt="Hazme un resumen en 5 líneas.">📄 Resumir</button>
+        <button data-prompt="Dame 3 ideas de negocio automatizables.">💡 Ideas</button>
+        <button data-prompt="Genera un ejemplo de código en JavaScript comentado.">🛠️ Código</button>
+        <button id="clearMemoryBtn" class="clear-btn">🧹 Limpiar</button>
+      </div>
+
+      <footer class="chat-input">
+        <input id="userInput" placeholder="Escribe tu mensaje..." autocomplete="off" />
+        <button id="sendBtn">➤</button>
+      </footer>
+    </div>
+
+    <script>
+      // ← CAMBIA ESTA por tu URL de Render
+      const BACKEND_URL = "https://agi-sentinel-bot.onrender.com/chat";
+      const BROWSE_URL = "https://agi-sentinel-bot.onrender.com/browse";
+      const STORAGE_KEY = "agi-chat-history";
+
+      let chatHistory = [
+        {
+          role: "system",
+          content:
+            "Eres un asistente de AGi Sentinel. Respondes en español y ayudas con diseño de UI, n8n, Supabase y automatización.",
+        },
+      ];
+
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length) chatHistory = parsed;
+        } catch (_) {}
+      }
+
+      const chatBody = document.getElementById("chatBody");
+      const userInput = document.getElementById("userInput");
+      const sendBtn = document.getElementById("sendBtn");
+      const loadingBar = document.getElementById("loadingBar");
+      const toggleAI = document.getElementById("toggleAI");
+      const statusDot = document.getElementById("statusDot");
+      const modelStatus = document.getElementById("modelStatus");
+      const quickActions = document.querySelector(".quick-actions");
+      const clearMemoryBtn = document.getElementById("clearMemoryBtn");
+
+      function saveHistory() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(chatHistory));
+      }
+
+      function appendUserMessage(text) {
+        const msg = document.createElement("div");
+        msg.className = "msg msg-user";
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = text;
+        msg.appendChild(bubble);
+        chatBody.appendChild(msg);
+        chatBody.scrollTop = chatBody.scrollHeight;
+      }
+
+      function appendAITyping() {
+        const wrap = document.createElement("div");
+        wrap.className = "msg msg-ai";
+        wrap.id = "typingMsg";
+
+        const avatar = document.createElement("div");
+        avatar.className = "avatar";
+        avatar.textContent = "IA";
+
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+
+        wrap.appendChild(avatar);
+        wrap.appendChild(bubble);
+        chatBody.appendChild(wrap);
+        chatBody.scrollTop = chatBody.scrollHeight;
+      }
+
+      function replaceTypingWithAI(text, metaText = "") {
+        const typingMsg = document.getElementById("typingMsg");
+        if (!typingMsg) return;
+        const bubble = typingMsg.querySelector(".bubble");
+        bubble.innerHTML =
+          "<p>" + text + "</p>" + (metaText ? '<span class="meta">' + metaText + "</span>" : "");
+        typingMsg.id = "";
+        chatBody.scrollTop = chatBody.scrollHeight;
+      }
+
+      function setLoading(state) {
+        if (state) {
+          loadingBar.classList.add("active");
+          userInput.disabled = true;
+          sendBtn.disabled = true;
+        } else {
+          loadingBar.classList.remove("active");
+          userInput.disabled = false;
+          sendBtn.disabled = false;
+          userInput.focus();
+        }
+      }
+
+      async function callOpenAI(userMessage) {
+        try {
+          chatHistory.push({ role: "user", content: userMessage });
+          const lastMessages = chatHistory.slice(-10);
+
+          const res = await fetch(BACKEND_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messages: lastMessages }),
+          });
+
+          if (!res.ok) {
+            return { error: true, text: "Error en el backend. Revisa Render." };
+          }
+
+          const data = await res.json();
+          const aiText =
+            data.choices?.[0]?.message?.content?.trim() || "No recibí nada de OpenAI.";
+          chatHistory.push({ role: "assistant", content: aiText });
+          saveHistory();
+          return { error: false, text: aiText, model: data.model || "OpenAI" };
+        } catch (err) {
+          console.error(err);
+          return { error: true, text: "No se pudo conectar al backend." };
+        }
+      }
+
+      async function handleSend(custom) {
+        const text = custom ?? userInput.value.trim();
+        if (!text) return;
+        appendUserMessage(text);
+        if (!custom) userInput.value = "";
+
+        if (toggleAI && !toggleAI.checked) {
+          appendAITyping();
+          setTimeout(() => {
+            replaceTypingWithAI(
+              "La IA está en modo apagado. Actívala arriba para conectar con OpenAI.",
+              "IA local"
+            );
+          }, 300);
+          return;
+        }
+
+        appendAITyping();
+        setLoading(true);
+        modelStatus.textContent = "Consultando OpenAI...";
+        statusDot.classList.remove("offline");
+        statusDot.classList.add("online");
+
+        const { error, text: aiText, model } = await callOpenAI(text);
+        if (error) {
+          replaceTypingWithAI(aiText, "Error");
+          modelStatus.textContent = "Error con OpenAI";
+          statusDot.classList.remove("online");
+          statusDot.classList.add("offline");
+        } else {
+          replaceTypingWithAI(aiText, "Modelo: " + (model || "OpenAI"));
+          modelStatus.textContent = "IA conectada a OpenAI";
+        }
+
+        setLoading(false);
+      }
+
+      sendBtn.addEventListener("click", () => handleSend());
+      userInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") handleSend();
+      });
+
+      if (quickActions) {
+        quickActions.addEventListener("click", (e) => {
+          const btn = e.target.closest("button");
+          if (!btn) return;
+          const prompt = btn.getAttribute("data-prompt");
+          if (prompt) handleSend(prompt);
+        });
+      }
+
+      toggleAI.addEventListener("change", () => {
+        if (toggleAI.checked) {
+          modelStatus.textContent = "IA conectada a OpenAI";
+          statusDot.classList.remove("offline");
+          statusDot.classList.add("online");
+        } else {
+          modelStatus.textContent = "IA en pausa";
+          statusDot.classList.remove("online");
+          statusDot.classList.add("offline");
+        }
+      });
+
+      clearMemoryBtn.addEventListener("click", () => {
+        chatHistory = [
+          {
+            role: "system",
+            content:
+              "Eres un asistente de AGi Sentinel. Respondes en español y ayudas con diseño de UI, n8n, Supabase y automatización.",
+          },
+        ];
+        saveHistory();
+        chatBody.innerHTML = `
+          <div class="msg msg-ai">
+            <div class="avatar">IA</div>
+            <div class="bubble">
+              <p>Memoria borrada 🧹. Podemos empezar de nuevo.</p>
+              <span class="meta">Sistema</span>
+            </div>
+          </div>
+        `;
+      });
+    </script>
   </body>
 </html>
