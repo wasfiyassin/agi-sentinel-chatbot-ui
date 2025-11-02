@@ -253,25 +253,23 @@
     </div>
     
 <script>
-  // 🟦 1. detectar si estamos en local o en la web
+  // 1. detectar si estamos en local o en producción
   const isLocal =
     location.hostname === "localhost" || location.hostname === "127.0.0.1";
 
-  // 🟦 2. URLs del backend
-  // 👇 CAMBIA SOLO ESTA si tu render tiene otro nombre
+  // 2. URL de tu backend en Render (CAMBIA ESTA SI TU RENDER SE LLAMA DISTINTO)
   const RENDER_BASE = "https://agi-sentinel-bot.onrender.com";
 
   const BACKEND_URL = isLocal
     ? "http://127.0.0.1:5000/chat"
     : `${RENDER_BASE}/chat`;
-
   const BROWSE_URL = isLocal
     ? "http://127.0.0.1:5000/browse"
     : `${RENDER_BASE}/browse`;
 
-  // 🟦 3. memoria
   const STORAGE_KEY = "agi-chat-history";
 
+  // ===== MEMORIA =====
   let chatHistory = [
     {
       role: "system",
@@ -285,10 +283,16 @@
     try {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length) chatHistory = parsed;
-    } catch (_) {}
+    } catch (e) {
+      console.warn("No pude leer el historial:", e);
+    }
   }
 
-  // 🟦 4. selectores
+  function saveHistory() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(chatHistory));
+  }
+
+  // ===== SELECTORES =====
   const chatBody = document.getElementById("chatBody");
   const userInput = document.getElementById("userInput");
   const sendBtn = document.getElementById("sendBtn");
@@ -299,10 +303,7 @@
   const quickActions = document.querySelector(".quick-actions");
   const clearMemoryBtn = document.getElementById("clearMemoryBtn");
 
-  function saveHistory() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(chatHistory));
-  }
-
+  // ===== UI =====
   function appendUserMessage(text) {
     const msg = document.createElement("div");
     msg.className = "msg msg-user";
@@ -345,6 +346,7 @@
   }
 
   function setLoading(state) {
+    if (!loadingBar) return;
     if (state) {
       loadingBar.classList.add("active");
       userInput.disabled = true;
@@ -357,25 +359,33 @@
     }
   }
 
-  // 🟦 5. llamada al backend
+  // ===== LLAMADA AL BACKEND (con timeout) =====
   async function callOpenAI(userMessage) {
     try {
-      // metemos el user en memoria
+      // metemos este mensaje en memoria
       chatHistory.push({ role: "user", content: userMessage });
+
       const lastMessages = chatHistory.slice(-10);
+
+      // ⏱ timeout de 12s (para cuando Render está despertando)
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
 
       const res = await fetch(BACKEND_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: lastMessages }),
+        signal: controller.signal,
       });
 
-      // si Render responde 404/500/CORS ➜ entramos aquí
+      clearTimeout(timer);
+
       if (!res.ok) {
         console.error("Backend devolvió error", res.status);
         return {
           error: true,
-          text: "Error en el backend. Revisa Render.",
+          text:
+            "No pude hablar con el backend. ¿Render se ha quedado dormido? Vuelve a intentarlo en unos segundos.",
         };
       }
 
@@ -383,62 +393,74 @@
       const aiText =
         data.choices?.[0]?.message?.content?.trim() ||
         "No recibí respuesta de la IA.";
+
       chatHistory.push({ role: "assistant", content: aiText });
       saveHistory();
 
       return { error: false, text: aiText, model: data.model || "OpenAI" };
     } catch (err) {
-      console.error("❌ No se pudo conectar al backend:", err);
-      return {
-        error: true,
-        text: "No se pudo conectar al backend.",
-      };
+      console.error("❌ Error llamando al backend:", err);
+      if (err.name === "AbortError") {
+        return {
+          error: true,
+          text:
+            "El servidor está tardando (Render suele dormir las apps). Vuelve a intentarlo en 5-10s.",
+        };
+      }
+      return { error: true, text: "No se pudo conectar al backend." };
     }
   }
 
-  // 🟦 6. enviar
-  async function handleSend(customText) {
-    const text = customText ?? userInput.value.trim();
+  // ===== MANEJAR ENVÍO =====
+  async function handleSend(messageFromQuickAction = null) {
+    const text = messageFromQuickAction ?? userInput.value.trim();
     if (!text) return;
 
     appendUserMessage(text);
-    if (!customText) userInput.value = "";
+    if (!messageFromQuickAction) userInput.value = "";
 
-    if (!toggleAI.checked) {
+    // IA apagada
+    if (toggleAI && !toggleAI.checked) {
       appendAITyping();
       setTimeout(() => {
         replaceTypingWithAI(
-          "La IA está en modo apagado. Actívala arriba para conectar con OpenAI.",
+          "La IA está en pausa. Actívala arriba para conectar con OpenAI.",
           "IA local"
         );
-      }, 350);
+      }, 400);
       return;
     }
 
     appendAITyping();
     setLoading(true);
-    modelStatus.textContent = "Consultando OpenAI...";
-    statusDot.classList.remove("offline");
-    statusDot.classList.add("online");
+    if (modelStatus) modelStatus.textContent = "Consultando OpenAI...";
+    if (statusDot) {
+      statusDot.classList.remove("offline");
+      statusDot.classList.add("online");
+    }
 
     const { error, text: aiText, model } = await callOpenAI(text);
 
     if (error) {
       replaceTypingWithAI(aiText, "Error");
-      modelStatus.textContent = "Error con OpenAI";
-      statusDot.classList.remove("online");
-      statusDot.classList.add("offline");
+      if (modelStatus) modelStatus.textContent = "Error con OpenAI";
+      if (statusDot) {
+        statusDot.classList.remove("online");
+        statusDot.classList.add("offline");
+      }
     } else {
       replaceTypingWithAI(aiText, `Modelo: ${model || "OpenAI"}`);
-      modelStatus.textContent = "IA conectada a OpenAI";
-      statusDot.classList.remove("offline");
-      statusDot.classList.add("online");
+      if (modelStatus) modelStatus.textContent = "IA conectada a OpenAI";
+      if (statusDot) {
+        statusDot.classList.remove("offline");
+        statusDot.classList.add("online");
+      }
     }
 
     setLoading(false);
   }
 
-  // 🟦 7. eventos
+  // ===== EVENTOS =====
   sendBtn.addEventListener("click", () => handleSend());
   userInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleSend();
@@ -489,6 +511,5 @@
     });
   }
 </script>
-
   </body>
 </html>
